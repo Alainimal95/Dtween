@@ -1,0 +1,125 @@
+//Get inputs//
+proc string[] input()
+    {
+    string $input[];
+    clear $input;
+    
+    //Save selection of object and destination//
+    string $selection[] = `ls -sl`;
+    $input[0] = $selection[0];
+    $input[1] = $selection[1];
+    
+    //Get user input//
+        //Count and endpoint//
+        $input[2] = `promptDialog -m "Number of copies:"
+                                  -b "Including Endpoint"
+                                  -b "Between Only"
+                                  -st "integer"
+                                  -tx "10"`;
+    
+        $input[3] = `promptDialog -q -text $input[2]`;
+    
+        //Along axis//
+        $input[4] = `confirmDialog -m "Along axis:"
+                                   -b "All"
+                                   -b "X"
+                                   -b "Y"
+                                   -b "Z"
+                                   -b "XY"
+                                   -b "XZ"
+                                   -b "YZ"`;
+    
+    //Get object centre//
+        //Start//
+        float $start[] = `objectCenter -gl $selection[0]`;
+        //End//
+        
+        float $end[] = `objectCenter -gl $selection[1]`;
+                          
+    //Return names, count, end object, axis, and endpoints//
+        //Start//
+        $input[5] = $start[0];
+        $input[6] = $start[1];
+        $input[7] = $start[2];
+    
+        //Endpoints//
+        $input[8] = $end[0];
+        $input[9] = $end[1];
+        $input[10] = $end[2];
+    
+    return $input;
+    };
+	
+////////////////////////////////////////////////////////////////////////////////
+
+//Calculate the spacing of the duplicates//
+proc float[] spacing (string $end, int $count, string $axis, float $xS, float $yS, float $zS, float $xE, float $yE, float $zE)
+    {
+    //Adjust spacing based on endpoint preference by increasing count by 1//
+    if ("Between Only" == $end)
+        $count++;
+        
+    //Calculate spacing//
+    float $xSpace = (($xE -$xS)/$count);
+    float $ySpace = (($yE -$yS)/$count);
+    float $zSpace = (($zE -$zS)/$count);
+        
+    //Restrict axes//
+    if ("X" == $axis) {$ySpace = 0; $zSpace = 0;}
+        
+    else if ("Y" == $axis) {$xSpace = 0; $zSpace = 0;}
+        
+    else if ("Z" == $axis) {$xSpace = 0; $ySpace = 0;}
+        
+    else if ("XY" == $axis) {$zSpace = 0;}
+        
+    else if ("XZ" == $axis) {$ySpace = 0;}
+        
+    else if ("YZ" == $axis) {$xSpace = 0;}
+    
+    //Return all spacing//
+    float $spacing[] = {$xSpace, $ySpace, $zSpace};
+    return $spacing;
+    };	
+
+////////////////////////////////////////////////////////////////////////////////
+
+//Distribute duplicates between two points//
+proc duplicateBetween ()
+    {
+    //Get inputs//
+    string $input[] = `input`;
+    select -cl;
+    
+        //Rename input return values//
+        string $first = $input[0];
+        string $last = $input[1];
+        string $end = $input[2];
+        int $count = $input[3]; 
+        string $axis = $input[4];
+        float $xS = $input[5];
+        float $yS = $input[6];
+        float $zS = $input[7];
+        float $xE = $input[8];
+        float $yE = $input[9];
+        float $zE = $input[10]; 
+
+    //Measure distance and calculate spacing//
+    float $spacing[] = `spacing $end $count $axis $xS $yS $zS $xE $yE $zE`;
+    
+        //Rename Return values//
+        float $xSpace = $spacing[0];
+        float $ySpace = $spacing[1];
+        float $zSpace = $spacing[2];
+
+    //Duplicate using count//
+    string $recent[] = {$first};
+    string $new[];
+    for ($i=1; $i<($count+1); $i++)
+        {
+        $new = `duplicate $recent`;
+        move -r ($xSpace) ($ySpace) ($zSpace) $new;
+        $recent = $new;
+        }
+    };
+duplicateBetween;
