@@ -1,6 +1,7 @@
 # Dtween
-Maya Modelling tool which duplicates an object between its original position up to and/or including an endpoint. An alternative take on duplicate special which is better for when the endpoint is not known.
-Use on components not currently supported.
+A Maya modelling tool which duplicates an object between its original position up to and/or including an endpoint.
+Similar idea to duplicate special, but because duplicate special works in iterations it becomes clunky when you have a known endpoint. Dtween will save you having to use a calculator.
+Currently only works on translations. Use on components not currently supported.
 
 <details>
 <summary><b>Setup</b></summary>
