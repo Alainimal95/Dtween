@@ -1,12 +1,14 @@
 # To Do:
 
-- Explore different transform spaces
+- Explore different transform spaces (especially for restricting xform ops to axes/planes)
 - Consider temporary pivots for rotation and scale ops in case pivot is not at object
   - Use obj centre captured in proc getXforms?
 - Clean up Dialogs
   - Condense to single dialog
   - Expose constraint interpolation setting
   - Add cancel/dismiss checks
+  - Allow user to select which operations to include/ignore (translations, rotations, scaling)
+  - Consider a more compact UI approach for the axis restriction akin to a dropdown/enum 
 - Errors:
   - Missing second selection
 - Warnings:
