@@ -2,9 +2,10 @@
 //
 // Latest version: https://github.com/Alainimal95/Dtween
 //
-// Current version: 1.0.1
+// Current version: 1.1.0
 //
-// Duplicates an object between its original position up to and/or including an endpoint
+// Gradually transforms duplicates of an source object.
+// Ex: For a translation, it will translate from a starting position up to and/or including an endpoint
 //
 // See README for usage and other notes
 
@@ -12,6 +13,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 // Get inputs
+
 proc string[] input()
 {
     string $input[];
@@ -24,114 +26,143 @@ proc string[] input()
     
     // Get user input
         // Count and endpoint
-        $input[2] = `promptDialog -m "Number of copies:"
-                                  -b "Including Endpoint"
-                                  -b "Between Only"
-                                  -st "integer"
-                                  -tx "3"`;
+        $input[2] = `promptDialog -message "Number of copies:"
+                                  -button "Including Endpoint"
+                                  -button "Between Only"
+                                  -style "integer"
+                                  -text "3"`;
     
-        $input[3] = `promptDialog -q -text $input[2]`;
+        $input[3] = `promptDialog -query -text $input[2]`;
     
         // Along axis
-        $input[4] = `confirmDialog -m "Along axis:"
-                                   -b "All"
-                                   -b "X"
-                                   -b "Y"
-                                   -b "Z"
-                                   -b "XY"
-                                   -b "XZ"
-                                   -b "YZ"`;
-    
-    // Get object centre
-        // Start
-        float $start[] = `objectCenter -gl $selection[0]`;
-        
-        // End
-        float $end[] = `objectCenter -gl $selection[1]`;
-                          
-    // Return names, count, end object, axis, and endpoints
-        // Start
-        $input[5] = $start[0];
-        $input[6] = $start[1];
-        $input[7] = $start[2];
-    
-        // Endpoints
-        $input[8] = $end[0];
-        $input[9] = $end[1];
-        $input[10] = $end[2];
+        $input[4] = `confirmDialog -message "Along axis:"
+                                   -button "All"
+                                   -button "X"
+                                   -button "Y"
+                                   -button "Z"
+                                   -button "XY"
+                                   -button "XZ"
+                                   -button "YZ"`;
     
     return $input;
 };
-	
+
+
 ////////////////////////////////////////////////////////////////////////////////
 
-// Calculate the spacing of the duplicates
-proc float[] spacing (string $end, int $count, string $axis, float $xS, float $yS, float $zS, float $xE, float $yE, float $zE)
+// getXforms
+
+proc vector[] getXforms (string $obj)
 {
-    // Adjust spacing based on endpoint preference by increasing count by 1
-    if ("Between Only" == $end) $count++;
-        
-    // Calculate spacing
-    float $xSpace = (($xE -$xS)/$count);
-    float $ySpace = (($yE -$yS)/$count);
-    float $zSpace = (($zE -$zS)/$count);
-        
-    // Restrict axes
-    if ("X" == $axis) {$ySpace = 0; $zSpace = 0;}
-        
-    else if ("Y" == $axis) {$xSpace = 0; $zSpace = 0;}
-        
-    else if ("Z" == $axis) {$xSpace = 0; $ySpace = 0;}
-        
-    else if ("XY" == $axis) {$zSpace = 0;}
-        
-    else if ("XZ" == $axis) {$ySpace = 0;}
-        
-    else if ("YZ" == $axis) {$xSpace = 0;}
+    vector $xforms[];
+    $xforms[0] = `objectCenter -global $obj`;    // using this in case pivot is not at object
+    $xforms[1] = `xform -q -rotation -os $obj`;  // may do the same in the future for these too and
+    $xforms[2] = `xform -q -scale -os -r $obj`;     // expose "ignore/centre pivot" as a setting.
+                                                 // DupeSpecial doesn't even do this so may be worth keeping it simple too
     
-    // Return all spacing
-    float $spacing[] = {$xSpace, $ySpace, $zSpace};
-    return $spacing;
+    return $xforms;
+};
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+// getDeltas
+//    Calculate the delta transforms of the duplicates
+
+proc vector[] getDeltas (string $start, string $end, string $endMode, int $count, string $axis)
+{
+    // Adjust deltas based on endpoint preference by increasing count by 1
+    if ("Between Only" == $endMode) $count++;
+    
+    // Calculate deltas
+    vector $startXforms[] = `getXforms $start`;
+    vector $endXforms[] = `getXforms $end`;
+    vector $deltaXforms[];
+    $deltaXforms[0] = (($endXforms[0]-$startXforms[0]) / $count);
+    $deltaXforms[1] = (1.0 / $count);    // lerp weight
+    $deltaXforms[2] = (($endXforms[2]-$startXforms[2]) / $count);
+    
+    // Restrict transforms to axes
+    vector $clamp;
+    if ("All" == $axis)
+        $clamp = <<1, 1, 1>>;
+    else
+        $clamp = <<`gmatch $axis "X*"`,`gmatch $axis "*Y*"`, `gmatch $axis "*Z"`>>;
+    vector $deltaPos = $deltaXforms[0];
+    $deltaXforms[0] = <<($deltaPos.x * $clamp.x),($deltaPos.y * $clamp.y),($deltaPos.z * $clamp.z)>>;
+    
+    // Return all deltas
+    return $deltaXforms;
 };	
 
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// blendRotation
+//    Rotates an object using a temporary orient constraint's blend weights
+
+proc blendRotation (string $start, string $end, string $obj, float $blend)
+{
+    // Make constraint
+    string $con[] = `orientConstraint -offset 0 0 0 -weight 1 $start $end $obj`;
+    //setAttr ($con[0] + ".interpType") 2; <-------- possibly expose this as a setting later
+    
+    // Blend rotation
+    string $w[] = `orientConstraint -q -weightAliasList $con[0]`;
+    setAttr ($con[0] + "." + $w[0]) (1.0 - $blend);
+    setAttr ($con[0] + "." + $w[1]) $blend;
+    
+    // Delete constraint and rotate
+    vector $rot = `xform -q -rotation -os $obj`;
+    delete $con;
+    setAttr ($obj + ".rotate") ($rot.x) ($rot.y) ($rot.z);
+    
+    return;
+};
+
+
+////////////////////////////////////////////////////////////////////////////////
+
 // Distribute duplicates between two points
+
 proc duplicateBetween ()
-    {
+{
     // Get inputs
     string $input[] = `input`;
     select -cl;
     
-    string $first = $input[0];
-    string $last = $input[1];
-    string $end = $input[2];
+    string $start = $input[0];
+    string $end = $input[1];
+    string $endMode = $input[2];
     int $count = $input[3]; 
     string $axis = $input[4];
-    float $xS = $input[5];
-    float $yS = $input[6];
-    float $zS = $input[7];
-    float $xE = $input[8];
-    float $yE = $input[9];
-    float $zE = $input[10]; 
 
-    // Measure distance and calculate spacing
-    float $spacing[] = `spacing $end $count $axis $xS $yS $zS $xE $yE $zE`;
-    float $xSpace = $spacing[0];
-    float $ySpace = $spacing[1];
-    float $zSpace = $spacing[2];
-
+    // Get deltas
+    vector $deltas[] = `getDeltas $start $end $endMode $count $axis`;
+    vector $deltaLoc = $deltas[0];
+    vector $deltaBlend = $deltas[1];            // only using x component, can't read it from $deltas 
+    vector $deltaScale = $deltas[2];            // due to MEL vector array limitation
+    
+    // Start scale
+    vector $scale0 = `xform -q -scale -os -r  $start`;
+    
     // Duplicate using count
-    string $recent[] = {$first};
+    string $recent[] = {$start};
     string $new[];
+    float $blend = 0;
     for ($i=1; $i<($count+1); $i++)
-        {
+    {
         $new = `duplicate $recent`;
-        move -r ($xSpace) ($ySpace) ($zSpace) $new;
+        $blend += $deltaBlend.x;
+        move -r ($deltaLoc.x) ($deltaLoc.y) ($deltaLoc.z) $new;
+        blendRotation $start $end $new[0] $blend;
+        scale -a -os ($scale0.x + ($deltaScale.x*$i))
+                     ($scale0.y + ($deltaScale.y*$i))
+                     ($scale0.z + ($deltaScale.z*$i))
+                      $new;
         $recent = $new;
-        }
-    };
+    }
+};
  
 
 ////////////////////////////////////////////////////////////////////////////////
